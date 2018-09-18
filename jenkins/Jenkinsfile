@@ -1,0 +1,85 @@
+pipeline {
+    
+    agent {
+        label {
+            label ""
+        }
+    }
+    
+    tools {
+        maven 'maven 3.5.4'
+    }
+    
+    //setze eigene globale variablen
+    environment {
+    	def WORKSPACE = pwd()
+    }
+    
+    stages {
+        stage('checkout & prepare') {
+           
+            steps {
+                
+            	//checke entsprechenden branch aus und führe 'git pull' aus
+              git 'git@git1-k:repository/produkt/kolumbusDrgKundenkonfigurationen.git'
+              sh 'cp -arp /data/r-pe-k/tools/skripte/git_hooks/post-checkout $WORKSPACE/.git/hooks/'
+              sh 'chmod ug+wx .git/hooks/post-checkout'
+              sh "git checkout ${version}"
+              sh "git pull origin ${version}"
+                    
+              // wenn der BRANCH ein SNAPSHOT ist soll die maven option --update-snapshot verwendet werden
+              script {
+              	BRANCH_VERSION = sh (
+                	script: "cat '.mvn/maven.config' ",
+                  returnStdout: true
+                ).trim()
+                        
+                UPDATE_SNAPSHOTS=''
+               	if (BRANCH_VERSION.contains('SNAPSHOT')) {
+                	echo 'SNAPSHOT INCLUDED'
+                  UPDATE_SNAPSHOTS='-U'
+                }
+              }
+                    
+              // ergenze weitere profile für dispatch zb fix,kolibri etz
+                    script {
+                        ADDITIONAL_PROFILES = ''
+                        if (mavenProfil == 'dispatch') {
+                            def profilesSB = ''<<''
+                            if (fix =='true') {
+                                profilesSB << ',fix'
+                            }
+                            if (doku =='true') {
+                                profilesSB << ',doku'
+                            }
+                            if (kolibri =='true') {
+                                profilesSB << ',kolibri'
+                            }
+                            if (db =='true') {
+                                profilesSB << ',db'
+                            }
+                            ADDITIONAL_PROFILES = profilesSB.toString()
+                        }
+                        
+                        echo ADDITIONAL_PROFILES
+                    }
+                    
+                
+            }
+        }
+        
+        stage('build') {
+            steps {
+                
+                // baue aus verzeichnis kunde
+                dir("${kunde}") {
+                    withMaven {
+                        sh "mvn clean ${UPDATE_SNAPSHOTS} ${mavenPhase} -P${mavenProfil}${ADDITIONAL_PROFILES}"
+                    }
+                }
+               
+            
+        }
+    }
+  }
+}
